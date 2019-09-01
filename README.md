@@ -31,6 +31,10 @@ The first list element contains the top ranking candidate (winner)
 The last list element contains the bottom ranking candidate (loser)
 The metric can be used to identify candidates with similar ranking.
 
+In all cases higher metric means higher preferences.
+In the simple_majority case the metric is the simply the number of first votes.
+In the schulze case the metric is just a progressive number.
+
 [Read more](https://en.wikipedia.org/wiki/Ranked_voting)
 
 ## License

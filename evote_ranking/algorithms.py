@@ -41,7 +41,7 @@ def simple_majority(preferences):
             votes[preference[0]] += 1
     votes_list = [(v, k) for k, v in votes.items()]
     votes_list.sort(reverse=True)
-    return [(k, v) for v, k in votes_list]
+    return votes_list
 
 
 def instant_runoff(preferences):
@@ -87,7 +87,7 @@ def instant_runoff(preferences):
         for (v, k) in options_list:
             if v == minv:
                 losers.add(k)
-                winners.append((v, k))
+                winners.insert(0, (v, k))
     return winners
 
 
@@ -108,7 +108,7 @@ def borda(preferences, mode='linear'):
                 delta = n ** (n - k - 1)
             winners[item] = winners.get(item, 0) + delta
     winners = [(v, k) for (k, v) in winners.items()]
-    winners.sort()
+    winners.sort(reverse=True)
     return winners
 
 
@@ -143,4 +143,6 @@ def schulze(preferences):
                         p[j, k] = max(p[j, k], min(p[j, i], p[i, k]))
     winners = list(range(n))
     winners.sort(key=cmp_to_key(lambda i, j: cmp(p[i, j], p[j, i])))
-    return [(i, candidates[k]) for (i, k) in enumerate(winners)]
+    winners = [(i, candidates[k]) for (i, k) in enumerate(winners)]
+    winners.reverse()
+    return winners

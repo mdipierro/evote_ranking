@@ -18,22 +18,22 @@ class EvoteTest(TestCase):
     def test_simple_majority(self):
         results = simple_majority(self.preferences)
         print(results)
-        expected = [('C', 12), ('A', 10), ('E', 8), ('B', 8), ('D', 7)]
+        expected = [(12, 'C'), (10, 'A'), (8, 'E'), (8, 'B'), (7, 'D')]
         self.assertEqual(results, expected)
 
     def test_instant_runoff(self):
         results = instant_runoff(self.preferences)
         print(results)
-        expected = [(7, 'D'), (8, 'B'), (8, 'E'), (19, 'C'), (45, 'A')]
+        expected = [(45, 'A'), (19, 'C'), (8, 'E'), (8, 'B'), (7, 'D')]
         self.assertEqual(results, expected)
 
     def test_borda(self):
         results = borda(self.preferences)
         print(results)
-        expected = [(114, 'D'), (134, 'C'), (137, 'B'), (143, 'A'), (147, 'E')]
+        expected = [(147, 'E'), (143, 'A'), (137, 'B'), (134, 'C'), (114, 'D')]
         self.assertEqual(results, expected)
     
     def test_schulze(self):
         results= schulze(self.preferences)
-        expected = [(0, 'D'), (1, 'B'), (2, 'C'), (3, 'A'), (4, 'E')]
+        expected = [(4, 'E'), (3, 'A'), (2, 'C'), (1, 'B'), (0, 'D')]
         self.assertEqual(results, expected)
