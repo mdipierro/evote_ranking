@@ -139,9 +139,10 @@ class Workflow:
         signature_path = os.path.join(self.workdir, 'signatures', signature_name)
         h = HumanRSA()
         h.load_private_pem(self.private_key_2)
+        signature = h.sign(encrypted_ballot)
         with open(signature_path, 'wb') as fp:
-            fp.write(h.sign(encrypted_ballot))        
-        return ballot_name, serialized_ballot
+            fp.write(signature)       
+        return ballot_name, serialized_ballot, signature
 
 
     def cast_vote(self, voter_id, preference):
@@ -178,7 +179,7 @@ class Workflow:
             # record votes
             ballot['preference'] = preference
             # save the voted ballot
-            new_ballot_name, serialized_ballot = self.save_voted_ballot(ballot)
+            new_ballot_name, serialized_ballot, signature = self.save_voted_ballot(ballot)
             try:
                 # delete blank ballot
                 os.unlink(self.get_path(original_ballot_name, 'voting_ballots'))
@@ -186,7 +187,7 @@ class Workflow:
                 voter_info['voted'] = True
                 with open(voter_filename, 'w') as fp:
                     json.dump(voter_info, fp)
-                return new_ballot_name, serialized_ballot
+                return new_ballot_name, serialized_ballot, signature
             except EVoteError:
                 raise
             except Exception as original_exception:

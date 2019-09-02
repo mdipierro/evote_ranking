@@ -155,7 +155,7 @@ Ballot signatures file names conform to this:
 When the election opens, votes are recorded. For example 'voter-1' prefers Matt over Tim over John:
 
 ```
->>> filename, ballot = Workflow(*args).cast_vote('voter-1', ['Matt', 'Tim','John'])
+>>> receipt = Workflow(*args).cast_vote('voter-1', ['Matt', 'Tim','John'])
 ```
 
 The process of recoding votes work as follows:
@@ -166,15 +166,18 @@ The process of recoding votes work as follows:
 - generates a signatue for the voted ballot and stores it in the signatures folder
 - mark the voter file with voted=True and unlock the file
 
-If anything fail we restore the voter file and move the blank ballot in the `blank_ballots` folder
+If anything fails we restore the voter file and move the blank ballot in the `blank_ballots` folder
 Notice the ballot is picked at random and not linked to the voter.
 
 Also there is no information stored about the voter anywere other than a link between the hash of the voter unique identified and whether he/she has voted or not.
 
-`blank_ballots`, `encrypted_ballots`, and `signatures` folders can be made public without violatity security.
-The `cast_vote` method returns the name of the encrypted ballot and the decrypted content of the ballot.
-This information, along with the ballot signatue, should be given to the voter as receipt, 
-so that the voter can verify:
+`cast_vote` returns a recept which contains:
+
+```
+>>> ballot_name, ballot_content, ballot_signatue = receipt
+```
+
+This information should be given to the voter as receipt, so that the voter can verify:
 
 - which one is his/her ballot ballot
 - that the ncrypted voted ballot was properly signed
