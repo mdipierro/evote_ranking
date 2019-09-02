@@ -1,5 +1,7 @@
 # Evote Ranking
 
+(derived from https://github.com/mdipierro/evote)
+
 This module contains the ranking algorithms used by the Evote software (@2008-2019)
 It also include an implementation of the EVote workflow for secure elections
 
