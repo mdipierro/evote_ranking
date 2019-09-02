@@ -78,7 +78,7 @@ h2 = HumanRSA()
 h2.generate()
 public_pem_1 = h2.public_pem()
 private_pem_1 = h2.private_pem()
-``
+```
 
 `public_pem_1` and `public_pem_2` can be made public right away. The first allows the voters to check their
 own vote is not tampered with. The second allows voters to check all the ballot signatures originated from
