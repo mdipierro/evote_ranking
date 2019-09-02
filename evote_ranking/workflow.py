@@ -6,9 +6,12 @@ import datetime
 import uuid
 import random
 import shutil
+import logging
+
 from pathlib import Path
 
 from filelock import FileLock
+from human_security import HumanRSA
 
 class EVoteError(RuntimeError): pass
 
@@ -18,44 +21,56 @@ class Workflow:
     re_encrypted = re.compile(r'^ballot\.\d+\.voted\.encrypted\.[\w-]+\.json$')
     re_decrypted = re.compile(r'^ballot\.\d+\.voted\.[\w-]+\.json$')
 
-    def __init__(self, workdir, secret_key):
+    def __init__(self, workdir, public_key, logger=logging):
         self.workdir = workdir
-        self.secret_key = secret_key
+        self.public_key = public_key
+        self.logger = logger        
 
     def setup(self):
+        self.logger.info('BEGIN creating requied subfolders')
         os.mkdir(os.path.join(self.workdir, 'blank_ballots'))  # ballots avaliable
         os.mkdir(os.path.join(self.workdir, 'voting_ballots')) # ballots not available
         os.mkdir(os.path.join(self.workdir, 'encrypted_ballots'))  # ballots voted
         os.mkdir(os.path.join(self.workdir, 'decrypted_ballots'))  # ballots voted
         os.mkdir(os.path.join(self.workdir, 'voters'))
+        self.logger.info('END creating requied subfolders')
 
     def hash(self, data):
-        return hashlib.md5(data.encode()).hexdigest()
+        return hashlib.md5(data.encode() if isinstance(data, str) else data).hexdigest()
 
     def verify_integrity(self, name, serialized_ballot):
-        # not implemented error
-        return
+        self.logger.info('verifying ballot integrity %s' % name)
+        assert self.hash(serialized_ballot) == name.split('.')[-2]
 
     def get_path(self, ballot_type, name):
         return os.path.join(self.workdir, ballot_type + '_ballots', name)
     
     def register_candidates(self, candidates):
+        self.logger.info('BEGIN registering cadidates')
+        for candidate in candidates:
+            self.logger.info('candidate:', candidate)
         filename = os.path.join(self.workdir, 'candidates.json')
         with open(filename, 'w') as fp:
             json.dump(candidates, fp)
+        self.logger.info('END registering cadidates')
         
     def register_voter(self, voter_id):
         voter_code = self.hash(voter_id)
+        self.logger.info('BEGIN registering voter' , voter_code)
         filename = os.path.join(self.workdir, 'voters', voter_code+'.json')
         with open(filename, 'w') as fp:
-            json.dump({'voted': False}, fp)
- 
+            self.logger.info(filename)
+            json.dump({'voter_code': voter_code, 'voted': False}, fp)
+        self.logger.info('BEGIN registering voter')
+
     def create_ballots(self, number, start=1, metadata=None):
+        self.logger.info('BEGIN creating blank ballots')
         for k in range(start, start+number):
+            self.logger.info('creating ballot %.6i' % k)
             ballot = {"number": k,
-                      "creation_timestamp": datetime.datetime.utcnow().isostring(),
+                      "creation_timestamp": str(datetime.datetime.utcnow()),
                       "uuid": str(uuid.uuid4()),
-                      "preference": [],                       
+                      "preference": [],
                       "metadata": metadata}
             serialized_ballot = json.dumps(ballot)
             signature = self.hash(serialized_ballot)
@@ -63,35 +78,44 @@ class Workflow:
             ballot_path = self.get_path('blank', ballot_name)
             with open(ballot_path, 'w') as fp:
                 fp.write(serialized_ballot)
+        self.logger.info('END creating blank ballots')
 
     def pick_random_ballot(self):
         folder = os.path.join(self.workdir, 'blank_ballots')
         ballot_names = [name for name in os.listdir(folder) if self.re_blank.match(name)]
         ballot_name = random.choice(ballot_names)
-        source_path = self.get_path('blank', ballot_name),
+        source_path = self.get_path('blank', ballot_name)
         destination_path = self.get_path('voting', ballot_name)
         shutil.move(source_path, destination_path)
         with open(destination_path) as fp:
             serialized_ballot = fp.read()
             self.verify_integrity(ballot_name, serialized_ballot)
             ballot = json.loads(serialized_ballot)
+        self.logger.info('picked a random ballot %s' % ballot_name)
         return ballot_name, ballot
 
     def encrypt_serialized_ballot(self, serialized_ballot):
-        encrypted_ballot = '<encrypted>' + serialized_ballot + '<encrypted>'
-        return encrypted_ballot 
+        self.logger.info('encrypting ballot')
+        h = HumanRSA()
+        h.load_public_pem(self.public_key)
+        encrypted_ballot = h.encrypt(serialized_ballot.encode())
+        return encrypted_ballot
 
-    def decrypt_serialized_ballot(self, serialized_ballot):
-        decrypted_ballot = serialized_ballot[11:-11]
+    def decrypt_serialized_ballot(self, serialized_ballot, private_key):
+        self.logger.info('decrypting ballot')
+        h = HumanRSA()
+        h.load_private_pem(private_key)
+        decrypted_ballot = h.decrypt(serialized_ballot).decode()
         return decrypted_ballot 
 
-    def save_voted_ballot(self, ballot):
+    def save_voted_ballot(self, ballot):        
         serialized_ballot = json.dumps(ballot)
         encrypted_ballot = self.encrypt_serialized_ballot(serialized_ballot)
         signature = self.hash(encrypted_ballot)
         ballot_name = 'ballot.%.6i.voted.encrypted.%s.json' % (ballot['number'], signature)        
+        self.logger.info('saving encryted voted ballot %s' % ballot_name)
         new_ballot_path = self.get_path('encrypted', ballot_name)
-        with open(new_ballot_path, 'w') as fp:
+        with open(new_ballot_path, 'wb') as fp:
             fp.write(encrypted_ballot)
         return ballot_name, serialized_ballot
 
@@ -107,13 +131,16 @@ class Workflow:
         if not os.path.exists(voter_filename):
             raise RuntimeError('Voter is not allowed to vote')
         # lock the voter information
-        lock = FileLock(voter_filename)
+        lock = FileLock(voter_filename+'.lock')
         with lock:
             try:
                 # check the user has not voted already
-                with open(voter_filename, 'r') as fp:
-                    voter_info = json.load(fp)
+                with open(voter_filename, 'r') as fp:                    
+                    data = fp.read()
+                    self.logger.info(voter_filename, repr(data))
+                    voter_info = json.loads(data)
                 if voter_info['voted']:
+                    self.logger.info('voter has already voted')
                     raise EVoteError('Voter has voted already')
                 # pick a random ballot
                 original_ballot_name, ballot = self.pick_random_ballot()
@@ -147,24 +174,33 @@ class Workflow:
                 except Exception as new_exception:
                     raise new_exception
 
-    def close_election(self):
+    def decrypt_ballots(self, private_key):
+        self.logger.info('BEGIN decrypting ballots')
         encrypted_ballots_folder = os.path.join(self.workdir, 'encrypted_ballots')
         ballot_names = [name for name in os.listdir(encrypted_ballots_folder) if self.re_encrypted.match(name)]
         for ballot_name in ballot_names:
+            self.logger.info('decrypting %s' % ballot_name)
             encrypted_path = self.get_path('encrypted', ballot_name)
-            with open(encrypted_path) as fp:
-                serialzied_encypted_ballot = fp.read()
-                self.verify_integrity(ballot_name, serialized_decrypted_ballot)
-            serialized_decrypted_ballot = self.decrypt_serialized_ballot(serialzied_encypted_ballot)
+            with open(encrypted_path, 'rb') as fp:
+                serialized_encrypted_ballot = fp.read()
+                self.verify_integrity(ballot_name, serialized_encrypted_ballot)
+            serialized_decrypted_ballot = self.decrypt_serialized_ballot(serialized_encrypted_ballot, private_key)
             signature = self.hash(serialized_decrypted_ballot)
-            ballot_number = ballot_name.split('.')[1]
+            ballot_number = int(ballot_name.split('.')[1])
             ballot_name = 'ballot.%.6i.voted.%s.json' % (ballot_number, signature)
- 
+            self.logger.info('saving decrypted ballot %s' % ballot_name)
+            decrypted_path = self.get_path('decrypted', ballot_name)
+            with open(decrypted_path, 'w') as fp:
+                fp.write(serialized_decrypted_ballot)
+        self.logger.info('END decrypting ballots')
+
     def count_votes(self, alg):
+        self.logger.info('BEGIN counting votes')
         decrypted_ballots_folder = os.path.join(self.workdir, 'decrypted_ballots')
         ballot_names = [name for name in os.listdir(decrypted_ballots_folder) if self.re_decrypted.match(name)]
         preferences = []
         for ballot_name in ballot_names:
+            self.logger.info('counting balot %s' % ballot_name)
             decrypted_path = self.get_path('decrypted', ballot_name)
             with open(decrypted_path) as fp:
                 serialized_decrypted_ballot = fp.read()
@@ -172,4 +208,5 @@ class Workflow:
             data = json.loads(serialized_decrypted_ballot)
             preference = data['preference']
             preferences.append(preference)
+        self.logger.info('END counting votes')
         return alg(preferences)
